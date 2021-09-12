@@ -109,7 +109,7 @@ class Progress:
 
 class MusicManager:
     def __init__(self, bar: Progress, selector: Menu):
-        self.dir = "/home/gtsol/Music"
+        self.dir = "$HOME/Music"
         self.selected = ""
         self.bar = bar
         self.selector = selector
