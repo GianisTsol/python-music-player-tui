@@ -27,9 +27,13 @@ class Menu:
         self.draw()
         self.event_loop(1)
 
+    def clear(self):
+        print(self.term.home + self.term.clear)
+
     def draw(self):
         """Render the menu to the terminal."""
-        print(self.term.home + self.term.clear)
+        # print(self.term.home + self.term.clear)
+        self.main.bar.draw_vol(self.main.volume)
         base_x = self.term.width // 2
         base_y = (self.term.height - len(self.OPTIONS)) // 2
         print(
@@ -62,14 +66,17 @@ class Menu:
             self.selection_index %= len(self.OPTIONS)
             self.draw()
         elif key == "enter":
+            self.main.refresh(True)
             self.selected = self.selection_index
-            self.draw()
         elif key == "right":
-            self.main.refresh(True)
-            self.main.volume += 10
+            if self.main.volume < 100:
+                self.main.bar.draw_vol(self.main.volume)
+                self.main.volume += 10
         elif key == "left":
-            self.main.refresh(True)
-            self.main.volume -= 10
+            if self.main.volume > 0:
+                self.main.bar.draw_vol(self.main.volume)
+                self.main.volume -= 10
+        self.draw()
 
     def event_loop(self, sleep):
         """Wait for keypresses."""
@@ -84,20 +91,24 @@ class Progress:
         self.value = 0.3
         self.max_value = 100.345
         self.term = term
-        self.chars = ["[", "=", "]"]
+        self.chars = ["[", "=", "]", "█"]
 
     def draw(self):
         """Render the progress bar."""
         x = self.term.width
         y = self.term.height
         base_x = 1
-        lens = [len(str(self.value)), len(str(self.max_value))]
+        lens = [len(str(round(self.value))), len(str(self.max_value))]
         filler = (
             self.chars[1] * round(x * (self.value / (self.max_value - lens[1])))
             + ">"
         )
         base_x += lens[0]
-        print(self.term.move_xy(1, y - 3) + str(self.value) + self.term.normal)
+        print(
+            self.term.move_xy(1, y - 3)
+            + str(round(self.value))
+            + self.term.normal
+        )
         print(
             self.term.move_xy(base_x, y - 3) + self.chars[0] + self.term.normal
         )
@@ -113,19 +124,38 @@ class Progress:
             + self.term.normal
         )
 
+    def draw_vol(self, volume):
+        base_x = self.term.width
+        base_y = self.term.height
+        x = 2
+        y = base_y - 4
+        for i in range(0, 110, 10):
+            y = y - 1
+            seg = "|"
+            if i <= volume:
+                if i == 100:
+                    seg += self.term.red
+                else:
+                    seg += self.term.green
+                seg += self.chars[3] + self.term.normal
+            else:
+                seg += " "
+            seg += "|"
+            print(self.term.move_xy(x, y) + seg)
+
 
 class MusicManager:
     def __init__(self, bar: Progress):
         self.dir = sys.argv[1]
         self.selected = ""
         self.bar = bar
-        self.selector = Menu(term, self)
+        self.volume = 40
         self.songs = []
         self.nowplaying = None
         self.updater_flag = True
         self.updater_process = None
-        self.volume = 40
         self.prev_point = 0.0
+        self.selector = Menu(term, self)
 
     def playsong(self, name: str):
         self.nowplaying = None
@@ -158,7 +188,7 @@ class MusicManager:
                 "-volume",
                 str(self.volume),
                 "-ss",
-                str(self.prev_point),
+                str(round(self.prev_point, 4)),
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -174,17 +204,20 @@ class MusicManager:
     def bar_updater(self):
         start = time.time()
         while self.updater_flag:
-            self.bar.value = round(time.time() - start, 2)
+            self.bar.value = time.time() - start
         self.updater_flag = True
 
     def refresh(self, save: bool):
         if save:
-            self.prev_point = self.bar.value + 3
+            self.prev_point = self.bar.value + 10.0
+            self.bar.draw_vol(self.volume)
+        else:
+            self.prev_point = 0
         if self.updater_flag and self.updater_process:
             self.updater_flag = False
             while not self.updater_flag:
                 pass
-            self.updater_process.join()
+            # self.updater_process.join()
         if self.nowplaying:
             self.nowplaying.send_signal(signal.SIGINT)
         self.playsong(self.songs[self.selector.selected])
@@ -195,19 +228,14 @@ class MusicManager:
         self.listsongs(self.dir)
         self.selector.OPTIONS = self.songs
         prev = ""
-        FPS = 60
-        last_frame_time = current_time = time.time()
         self.selector.draw()
         while True:
-            # Calculations needed for maintaining stable FPS
-            # sleep_time = 1 / FPS - (current_time - last_frame_time)
-            # if sleep_time > 0:
-            # time.sleep(sleep_time)
-            sleep_time = 0
             if self.selector.selected != prev and len(self.songs) > 0:
+                self.selector.clear()
                 prev = self.selector.selected
                 self.refresh(False)
-            self.selector.event_loop(sleep_time)
+                self.selector.draw()
+            self.selector.event_loop(0.01)
             self.bar.draw()
 
 
