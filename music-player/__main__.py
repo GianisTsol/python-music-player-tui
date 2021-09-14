@@ -7,6 +7,7 @@ import subprocess
 import signal
 import re
 import time
+import sys
 
 term = Terminal()
 
@@ -16,17 +17,19 @@ print(term.home + term.clear + term.move_y(term.height // 2))
 class Menu:
     """The main menu."""
 
-    def __init__(self, term: Terminal):
+    def __init__(self, term: Terminal, main):
         """Set up the menu."""
         self.term = term
         self.OPTIONS = []
         self.selection_index = 0
         self.selected = 0
+        self.main = main
         self.draw()
         self.event_loop(1)
 
     def draw(self):
         """Render the menu to the terminal."""
+        print(self.term.home + self.term.clear)
         base_x = self.term.width // 2
         base_y = (self.term.height - len(self.OPTIONS)) // 2
         print(
@@ -61,6 +64,12 @@ class Menu:
         elif key == "enter":
             self.selected = self.selection_index
             self.draw()
+        elif key == "right":
+            self.main.refresh(True)
+            self.main.volume += 10
+        elif key == "left":
+            self.main.refresh(True)
+            self.main.volume -= 10
 
     def event_loop(self, sleep):
         """Wait for keypresses."""
@@ -68,8 +77,6 @@ class Menu:
             key = self.term.inkey(timeout=sleep).name
             if key:
                 self.on_key_press(key.removeprefix("KEY_").lower())
-
-        print(self.term.home + self.term.clear)
 
 
 class Progress:
@@ -108,15 +115,17 @@ class Progress:
 
 
 class MusicManager:
-    def __init__(self, bar: Progress, selector: Menu):
-        self.dir = "$HOME/Music"
+    def __init__(self, bar: Progress):
+        self.dir = sys.argv[1]
         self.selected = ""
         self.bar = bar
-        self.selector = selector
+        self.selector = Menu(term, self)
         self.songs = []
         self.nowplaying = None
         self.updater_flag = True
         self.updater_process = None
+        self.volume = 40
+        self.prev_point = 0.0
 
     def playsong(self, name: str):
         self.nowplaying = None
@@ -131,7 +140,7 @@ class MusicManager:
                 + "-of "
                 + 'csv="p=0" '
                 + "-i "
-                + re.escape(name),
+                + re.escape(name)
             ],
             stdout=subprocess.PIPE,
             shell=True,
@@ -141,7 +150,16 @@ class MusicManager:
         duration = float(out)
         self.bar.max_value = duration
         song = subprocess.Popen(
-            ["ffplay", "-nodisp", "-autoexit", name],
+            [
+                "ffplay",
+                "-nodisp",
+                "-autoexit",
+                name,
+                "-volume",
+                str(self.volume),
+                "-ss",
+                str(self.prev_point),
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -159,37 +177,41 @@ class MusicManager:
             self.bar.value = round(time.time() - start, 2)
         self.updater_flag = True
 
+    def refresh(self, save: bool):
+        if save:
+            self.prev_point = self.bar.value + 3
+        if self.updater_flag and self.updater_process:
+            self.updater_flag = False
+            while not self.updater_flag:
+                pass
+            self.updater_process.join()
+        if self.nowplaying:
+            self.nowplaying.send_signal(signal.SIGINT)
+        self.playsong(self.songs[self.selector.selected])
+        self.updater_process = Thread(target=self.bar_updater)
+        self.updater_process.start()
+
     def mainloop(self):
         self.listsongs(self.dir)
         self.selector.OPTIONS = self.songs
         prev = ""
-        FPS = 4
+        FPS = 60
         last_frame_time = current_time = time.time()
+        self.selector.draw()
         while True:
             # Calculations needed for maintaining stable FPS
-            sleep_time = 1 / FPS - (current_time - last_frame_time)
+            # sleep_time = 1 / FPS - (current_time - last_frame_time)
             # if sleep_time > 0:
             # time.sleep(sleep_time)
-
-            if self.selector.selected != prev:
+            sleep_time = 0
+            if self.selector.selected != prev and len(self.songs) > 0:
                 prev = self.selector.selected
-                if self.updater_flag and self.updater_process:
-                    self.updater_flag = False
-                    while not self.updater_flag:
-                        pass
-                    self.updater_process.join()
-                if self.nowplaying:
-                    self.nowplaying.send_signal(signal.SIGINT)
-                self.playsong(self.songs[self.selector.selected])
-                self.updater_process = Thread(target=self.bar_updater)
-                self.updater_process.start()
+                self.refresh(False)
             self.selector.event_loop(sleep_time)
-            self.selector.draw()
             self.bar.draw()
 
 
 prog = Progress(term)
-men = Menu(term)
 
-mgr = MusicManager(prog, men)
+mgr = MusicManager(prog)
 mgr.mainloop()
