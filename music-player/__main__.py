@@ -1,4 +1,5 @@
 # import required modules
+
 from blessed import Terminal
 import os
 from threading import Thread
@@ -27,8 +28,8 @@ class Menu:
         self.draw()
         self.event_loop(1)
 
-    def clear(self):
-        print(self.term.home + self.term.clear)
+    def clear(self, *args):
+        print(self.term.clear)
 
     def draw(self):
         """Render the menu to the terminal."""
@@ -43,6 +44,9 @@ class Menu:
             + self.term.normal
         )
         for index, label in enumerate(self.OPTIONS):
+            diff = len(label) - self.term.width
+            if len(label) > self.term.width - 4:
+                label = label[: len(label) - diff] + "..."
             x = base_x - len(label) // 2
             y = base_y + index
             if index == self.selection_index:
@@ -67,6 +71,7 @@ class Menu:
             self.draw()
         elif key == "enter":
             self.main.refresh(True)
+            self.clear()
             self.selected = self.selection_index
         elif key == "right":
             if self.main.volume < 100:
@@ -76,7 +81,6 @@ class Menu:
             if self.main.volume > 0:
                 self.main.bar.draw_vol(self.main.volume)
                 self.main.volume -= 10
-        self.draw()
 
     def event_loop(self, sleep):
         """Wait for keypresses."""
@@ -91,7 +95,7 @@ class Progress:
         self.value = 0.3
         self.max_value = 100.345
         self.term = term
-        self.chars = ["[", "=", "]", "█"]
+        self.chars = ["[" + self.term.clear_eol, "=", "]", "█"]
 
     def draw(self):
         """Render the progress bar."""
@@ -231,11 +235,11 @@ class MusicManager:
         self.selector.draw()
         while True:
             if self.selector.selected != prev and len(self.songs) > 0:
-                self.selector.clear()
                 prev = self.selector.selected
                 self.refresh(False)
-                self.selector.draw()
-            self.selector.event_loop(0.01)
+                self.selector.clear()
+            self.selector.event_loop(0.1)
+            self.selector.draw()
             self.bar.draw()
 
 
