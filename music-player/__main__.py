@@ -59,6 +59,11 @@ class Menu:
                 style = self.term.red
             print(self.term.move_xy(x, y) + style + label + self.term.normal)
 
+    def next(self):
+        self.selection_index += 1
+        self.selection_index %= len(self.OPTIONS)
+        self.selected = self.selection_index
+
     def on_key_press(self, key: str):
         """Handle a key being pressed."""
         if key == "down":
@@ -81,6 +86,8 @@ class Menu:
             if self.main.volume > 0:
                 self.main.bar.draw_vol(self.main.volume)
                 self.main.volume -= 10
+        elif key == "resize":
+            self.clear()
 
     def event_loop(self, sleep):
         """Wait for keypresses."""
@@ -102,10 +109,13 @@ class Progress:
         x = self.term.width
         y = self.term.height
         base_x = 1
-        lens = [len(str(round(self.value))), len(str(self.max_value))]
+        lens = [len(str(round(self.value))), len(str(round(self.max_value)))]
         filler = (
-            self.chars[1] * round(x * (self.value / (self.max_value - lens[1])))
+            self.chars[1]
+            * round(x * (self.value / (self.max_value - lens[1] - lens[0] - 1)))
+            + self.term.red
             + ">"
+            + self.term.normal
         )
         base_x += lens[0]
         print(
@@ -123,8 +133,8 @@ class Progress:
             + self.term.normal
         )
         print(
-            self.term.move_xy(x - len(str(self.max_value)), y - 3)
-            + str(self.max_value)
+            self.term.move_xy(x - len(str(round(self.max_value))), y - 3)
+            + str(round(self.max_value))
             + self.term.normal
         )
 
@@ -209,6 +219,9 @@ class MusicManager:
         start = time.time()
         while self.updater_flag:
             self.bar.value = time.time() - start
+            if self.bar.value >= self.bar.max_value:
+                self.selector.next()
+                break
         self.updater_flag = True
 
     def refresh(self, save: bool):
